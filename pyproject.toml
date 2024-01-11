@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "adeptid-challenge"
+version = "0.1.0"
+description = ""
+authors = ["lucianistrati <lucianistrati@yahoo.com>"]
+readme = "README.md"
+packages = [{include = "adeptid_challenge"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+matplotlib = "^3.8.2"
+scikit-learn = "^1.3.2"
+sentence-transformers = "^2.2.2"
+xgboost = "^2.0.3"
+nltk = "^3.8.1"
+openai = "^1.7.0"
+statistics = "^1.0.3.5"
+vertexai = "^0.0.1"
+pinecone-client = "^2.2.4"
+torch = "^2.1.2"
+pip = "^23.3.2"
+install = "^1.3.5"
+django-postgres-extra = "^2.0.8"
+numpy = "^1.26.3"
+pandas = "^2.1.4"
+tqdm = "^4.66.1"
+joblib = "^1.3.2"
+google-cloud-aiplatform = "^1.39.0"
+python-dotenv = "^1.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
