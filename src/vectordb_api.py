@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
+import json
 
 load_dotenv()
 
@@ -135,17 +136,18 @@ def query_database(vector_db_api: Any, embedding: Any, top_k: int = 1):
         return [{"label": "29-1212.00"}]
 
 
-import pandas as pd
-import json
+def main():
+    test_df = pd.read_csv("data/test_data.csv")
+    job_titles = test_df["TITLE_RAW"].to_list()[:200]
+    top_10_most_similar = []
+    vector_db_api = VectorDBAPI()
+    embs = np.load("data/X_test_TITLE_RAW.npy", allow_pickle=True)
+    
+    for (job_title, emb) in tqdm(zip(job_titles, embs)):
+        result = query_database(vector_db_api, emb.tolist(), top_k=10)
+        top_10_most_similar.append([elem["label"] for elem in result])
+        with open("data/top_10_most_similar.json", 'w') as json_file:
+            json.dump(top_10_most_similar, json_file)
 
-test_df = pd.read_csv("data/test_data.csv")
-job_titles = test_df["TITLE_RAW"].to_list()[:200]
-top_10_most_similar = []
-vector_db_api = VectorDBAPI()
-embs = np.load("data/X_test_TITLE_RAW.npy", allow_pickle=True)
-
-for (job_title, emb) in tqdm(zip(job_titles, embs)):
-    result = query_database(vector_db_api, emb.tolist(), top_k=10)
-    top_10_most_similar.append([elem["label"] for elem in result])
-    with open("data/top_10_most_similar.json", 'w') as json_file:
-        json.dump(top_10_most_similar, json_file)
+if __name__ == "__main__":
+    main()
