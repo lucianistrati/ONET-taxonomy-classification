@@ -45,8 +45,11 @@ def predict(job_title: str, top_k: int = 5):
         print("ONET NAME:", onet_name)
         print("ONET LABEL:", onet_label)
 
+def main():
+    job_title = "Grocery Order Writer (Buyer / Inventory Replenishment)"
+    
+    predict(job_title)
 
-job_title = "Grocery Order Writer (Buyer / Inventory Replenishment)"
-
-predict(job_title)
+if __name__ == "__main__":
+    main()
 
