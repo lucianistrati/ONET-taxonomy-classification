@@ -1,4 +1,4 @@
-# AdeptID-Challenge
+# ONET taxonomy classification
 
 ## Install dependencies
 
