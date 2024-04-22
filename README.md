@@ -1,5 +1,7 @@
 # ONET taxonomy classification
 
+This repository serves as a hub for tools and resources related to classifying occupations using the Occupational Information Network (ONET) taxonomy. The ONET taxonomy provides a standardized framework for categorizing and organizing occupational information, making it a valuable resource for various applications such as workforce development, career guidance, and labor market analysis.
+
 ## Install dependencies
 
 Install all the project dependencies by running the following command in the 
