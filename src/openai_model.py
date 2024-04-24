@@ -103,19 +103,6 @@ def main():
 
     print(correct/len(answers))
 
-    # for (job_title, job_description) in tqdm(zip(job_titles, job_descriptions)):
-    #     query = f"""Given this job title: {job_title},
-    #                         this job description:
-    #     {job_description[:min(20_000, len(job_description))]}
-    #                         and
-    #                         based on what
-    #                         you know
-    #                         about the ONET taxonomy to pick
-    #                         only the first choice for the ONET classification that you
-    #                         see as the best fit for this job!"""
-    #     answers.append(openai_answer(query))
-
-
     with open("data/top_10_most_similar.json", 'r') as json_file:
         similar_onet_values_list = json.load(json_file)
 
