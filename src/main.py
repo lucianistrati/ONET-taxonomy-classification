@@ -1,45 +1,77 @@
-import os.path
-from xgboost import XGBClassifier
-from sklearn.metrics import (accuracy_score, f1_score, precision_score, recall_score,
-                             confusion_matrix)
-from nltk.tokenize import word_tokenize
-from typing import Set, List, Any
-from matplotlib import pyplot as plt
-from statistics import mean, median
+import os
+import json
+import numpy as np
+import pandas as pd
 import joblib
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
-from sentence_transformers import SentenceTransformer
-from sklearn.preprocessing import LabelEncoder
 from collections import Counter
+from typing import Set, List, Any
+from matplotlib import pyplot as plt
+from statistics import mean, median
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import (accuracy_score, f1_score, precision_score,
+                             recall_score, confusion_matrix)
 from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
-from copy import deepcopy
+from sentence_transformers import SentenceTransformer
+from nltk.tokenize import word_tokenize
+from torch.utils.data import Dataset, DataLoader
 from src.vectordb_api import query_database, VectorDBAPI
-import numpy as np
-import pandas as pd
-
-import json
 
 
-def flatten(my_list):
+def flatten(my_list: List[List[Any]]) -> List[Any]:
+    """
+    Flattens a list of lists into a single list.
+
+    Args:
+        my_list (List[List[Any]]): A list of lists.
+
+    Returns:
+        List[Any]: A flattened list containing all values from the sub-lists.
+    """
     return [val for sub_list in my_list for val in sub_list]
 
 
 def encode(sentence: str, model) -> List[float]:
+    """
+    Encodes a single sentence using a specified model.
+
+    Args:
+        sentence (str): The sentence to encode.
+        model: The model used for encoding.
+
+    Returns:
+        List[float]: A list of floats representing the encoded sentence.
+    """
     return model.encode([sentence])
 
 
 def filter_off_oov(text: str, vocab: Set[str]) -> str:
+    """
+    Filters out out-of-vocabulary (OOV) tokens from the input text.
+
+    Args:
+        text (str): The input text to filter.
+        vocab (Set[str]): A set of valid vocabulary tokens.
+
+    Returns:
+        str: The filtered text containing only tokens in the vocabulary.
+    """
     tokens = word_tokenize(text)
     return " ".join([token for token in tokens if token in vocab])
 
 
-def plot_histogram(data, title):
+def plot_histogram(data: List[int], title: str) -> None:
+    """
+    Plots a histogram of the given data.
+
+    Args:
+        data (List[int]): The data to plot.
+        title (str): The title of the plot.
+    """
     plt.hist(data, bins=100, color='blue', alpha=0.7)
 
     # Add labels and title
@@ -50,33 +82,50 @@ def plot_histogram(data, title):
     plt.show()
 
 
-def encode_datapoints(datapoints: List[str], filepath: str, model: Any):
+def encode_datapoints(datapoints: List[str], filepath: str, model: Any) -> None:
+    """
+    Encodes a list of data points and saves them to a file if it doesn't already exist.
+
+    Args:
+        datapoints (List[str]): The data points to encode.
+        filepath (str): The file path to save the encoded data.
+        model: The model used for encoding.
+    """
     if os.path.exists(filepath):
         return
     arr = np.array([encode(datapoint, model) for datapoint in datapoints])
     np.save(file=filepath, arr=arr, allow_pickle=True)
 
 
-def create_embeddings(train_df: pd.DataFrame, test_df: pd.DataFrame, onet_vocab: Set[
-    str]):
+def create_embeddings(train_df: pd.DataFrame, test_df: pd.DataFrame, onet_vocab: Set[str]) -> None:
+    """
+    Creates embeddings for training and testing data frames using specified vocabulary.
+
+    Args:
+        train_df (pd.DataFrame): The training data frame.
+        test_df (pd.DataFrame): The testing data frame.
+        onet_vocab (Set[str]): A set of vocabulary tokens.
+    """
     features = ["TITLE_RAW", "BODY"] * 3
     label = "ONET_NAME"
     use_mpnet_options = [False, True, False] * 2
     use_oov_options = [True, False, False] * 2
-    for (feature, use_mpnet, use_oov) in zip(features, use_mpnet_options,
-                                             use_oov_options):
 
-        if use_mpnet:
-            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-        else:
-            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        X_train, X_test = train_df[feature].to_list(),  test_df[feature].to_list()
+    for (feature, use_mpnet, use_oov) in zip(features, use_mpnet_options, use_oov_options):
+        # Select the SentenceTransformer model based on options
+        model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2' if use_mpnet 
+                                     else 'sentence-transformers/all-MiniLM-L6-v2')
+
+        # Prepare training and testing datasets
+        X_train, X_test = train_df[feature].to_list(), test_df[feature].to_list()
         y_train, y_test = train_df[label].to_list(), test_df[label].to_list()
 
+        # Filter OOV tokens if specified
         if not use_mpnet:
             X_train = [filter_off_oov(text.lower(), onet_vocab) for text in X_train]
             X_test = [filter_off_oov(text.lower(), onet_vocab) for text in X_test]
 
+        # Determine file suffix based on encoding options
         x_ending = f"_{feature}"
         if not use_oov and not use_mpnet:
             pass
@@ -86,23 +135,43 @@ def create_embeddings(train_df: pd.DataFrame, test_df: pd.DataFrame, onet_vocab:
             x_ending += "_mpnet"
         elif use_oov and use_mpnet:
             continue
+        
         y_ending = "_mpnet" if use_mpnet else ""
         print(use_mpnet, use_oov, feature, x_ending, y_ending)
 
+        # Encode and save the data points
         encode_datapoints(X_train, f"data/X_train{x_ending}.npy", model)
         encode_datapoints(X_test, f"data/X_test{x_ending}.npy", model)
         encode_datapoints(y_test, f"data/y_test{y_ending}.npy", model)
 
 
 class EmbeddingsDataset(Dataset):
+    """
+    Custom Dataset class for embedding data.
+
+    Args:
+        embeddings: The embeddings for the dataset.
+        labels: The corresponding labels for the embeddings.
+    """
+
     def __init__(self, embeddings, labels):
         self.embeddings = embeddings
         self.labels = labels
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Returns the number of samples in the dataset."""
         return len(self.labels)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
+        """
+        Retrieves the embedding and label at the specified index.
+
+        Args:
+            idx (int): The index of the sample to retrieve.
+
+        Returns:
+            dict: A dictionary containing the embedding and label.
+        """
         return {
             'embedding': torch.FloatTensor(self.embeddings[idx]),
             'label': torch.LongTensor([self.labels[idx]])
@@ -110,20 +179,40 @@ class EmbeddingsDataset(Dataset):
 
 
 class FCNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    """
+    A simple Feedforward Neural Network for classification.
+
+    Args:
+        input_size: The number of input features.
+        hidden_size: The number of hidden units.
+        output_size: The number of output classes.
+    """
+
+    def __init__(self, input_size: int, hidden_size: int, output_size: int):
         super(FCNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.relu1 = nn.ReLU()
         self.fc2 = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Defines the forward pass of the network."""
         x = self.fc1(x)
         x = self.relu1(x)
         x = self.fc2(x)
         return x
 
 
-def train_nn(train_embeddings, train_labels, test_embeddings, test_labels):
+def train_nn(train_embeddings: np.ndarray, train_labels: np.ndarray,
+             test_embeddings: np.ndarray, test_labels: np.ndarray) -> None:
+    """
+    Trains a Feedforward Neural Network using the provided embeddings and labels.
+
+    Args:
+        train_embeddings (np.ndarray): Training embeddings.
+        train_labels (np.ndarray): Training labels.
+        test_embeddings (np.ndarray): Testing embeddings.
+        test_labels (np.ndarray): Testing labels.
+    """
     # Train-validation split
     train_embeddings, val_embeddings, train_labels, val_labels = train_test_split(
         train_embeddings, train_labels, test_size=0.02, random_state=42
@@ -171,179 +260,195 @@ def train_nn(train_embeddings, train_labels, test_embeddings, test_labels):
             # Compute the loss
             loss = criterion(outputs, labels)
 
-            # Backward pass
+            # Backward pass and optimization
             loss.backward()
-
-            # Update weights
             optimizer.step()
 
             total_loss += loss.item()
 
-        # Print training loss after each epoch
-        print(f"Epoch {epoch + 1}/{epochs}, "
-              f"Training Loss: {total_loss / len(train_loader)}")
+        # Print average loss for the epoch
+        print(f'Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_loader):.4f}')
 
-        val_loss = 0
-        # Validation loop after each epoch
-        with torch.no_grad():
-            model.eval()  # Set the model to evaluation mode
-            correct = 0
-            total = 0
-            for val_batch in val_loader:
-                val_inputs, val_labels = val_batch['embedding'], val_batch[
-                    'label'].squeeze()
-
-                # Forward pass
-                val_outputs = model(val_inputs)
-                loss = criterion(val_outputs, val_labels)
-                val_loss += loss.item()
-
-                _, predicted = torch.max(val_outputs.data, 1)
-
-                # Accuracy calculation
-                total += val_labels.size(0)
-                correct += (predicted == val_labels).sum().item()
-
-            accuracy = correct / total
-            print(f'Validation Accuracy after Epoch {epoch + 1}: {accuracy}')
-            print(f'Validation Loss after Epoch {epoch + 1}: {val_loss}')
-
-    # Testing loop
-    with torch.no_grad():
+        # Validation phase
         model.eval()
-        correct = 0
-        total = 0
+        val_loss = 0
+        val_correct = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                inputs, labels = batch['embedding'], batch['label'].squeeze()
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+                val_correct += (outputs.argmax(dim=1) == labels).sum().item()
+
+        # Print validation loss and accuracy
+        print(f'Validation Loss: {val_loss / len(val_loader):.4f}, '
+              f'Validation Accuracy: {val_correct / len(val_dataset):.4f}')
+
+    # Testing phase
+    model.eval()
+    test_correct = 0
+    test_predictions = []
+    with torch.no_grad():
         for batch in test_loader:
             inputs, labels = batch['embedding'], batch['label'].squeeze()
-
-            # Forward pass
             outputs = model(inputs)
-            _, predicted = torch.max(outputs.data, 1)
+            test_predictions.extend(outputs.argmax(dim=1).cpu().numpy())
 
-            # Accuracy calculation
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+    # Save the model
+    torch.save(model.state_dict(), 'models/model.pt')
 
-        accuracy = correct / total
-        print(f'Test Accuracy: {accuracy}')
-
-    print("Training finished!")
-
-    # Save the trained model
-    torch.save(model.state_dict(), "checkpoints/fcnn.pth")
+    # Compute and print final test accuracy
+    test_accuracy = accuracy_score(test_labels, test_predictions)
+    print(f'Test Accuracy: {test_accuracy:.4f}')
 
 
-def main():
-    train_df = pd.read_csv("data/train_data.csv")
-    test_df = pd.read_csv("data/test_data.csv")
+def load_model() -> FCNN:
+    """
+    Loads the trained model from file.
 
-    onet_label_to_name = dict()
-    for (label, name) in zip(set(train_df["ONET"].to_list() +
-                                 test_df["ONET"].to_list()),
-                             set(train_df["ONET_NAME"].to_list() +
-                                 test_df["ONET_NAME"].to_list())):
-        if label not in onet_label_to_name:
-            onet_label_to_name[label] = name
-    onet_name_to_label = {name: label for (label, name) in onet_label_to_name.items()}
+    Returns:
+        FCNN: The trained model instance.
+    """
+    model = FCNN(input_size=768, hidden_size=512, output_size=9)
+    model.load_state_dict(torch.load('models/model.pt'))
+    return model
 
-    with open("data/onet_name_to_label.json", 'w') as json_file:
-        json.dump(onet_name_to_label, json_file)
 
-    with open("data/onet_label_to_name.json", 'w') as json_file:
-        json.dump(onet_label_to_name, json_file)
+def evaluate_model(test_embeddings: np.ndarray, test_labels: np.ndarray) -> None:
+    """
+    Evaluates the model on the test dataset.
 
-    onet_choices = set(train_df["ONET_NAME"].to_list() +
-    test_df["ONET_NAME"].to_list())
-    onet_vocab = set(flatten([word_tokenize(val.lower()) for val in onet_choices]))
+    Args:
+        test_embeddings (np.ndarray): Test embeddings.
+        test_labels (np.ndarray): Test labels.
+    """
+    model = load_model()
+    model.eval()
 
-    body_lenghts = [len(text) for text in train_df["BODY"].to_list() + test_df[
-        "BODY"].to_list()]
-    title_lenghts = [len(text) for text in train_df["TITLE_RAW"].to_list() + test_df[
-        "TITLE_RAW"].to_list()]
-    # many of them appear like only once or twice
+    test_loader = DataLoader(EmbeddingsDataset(test_embeddings, test_labels), 
+                             batch_size=64, shuffle=False)
 
-    print(len(set(train_df["ONET"].to_list())), Counter(train_df["ONET"].to_list()))
-    print(len(set(test_df["ONET"].to_list())), Counter(test_df["ONET"].to_list()))
+    test_predictions = []
+    with torch.no_grad():
+        for batch in test_loader:
+            inputs = batch['embedding']
+            outputs = model(inputs)
+            test_predictions.extend(outputs.argmax(dim=1).cpu().numpy())
 
-    all_possible_classes = list(set(test_df["ONET"].to_list()).
-                            union(set(train_df["ONET"].to_list())))
-    use_mpnet = True
-    if use_mpnet:
-        model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-    else:
-        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    # Calculate evaluation metrics
+    acc = accuracy_score(test_labels, test_predictions)
+    precision = precision_score(test_labels, test_predictions, average='weighted')
+    recall = recall_score(test_labels, test_predictions, average='weighted')
+    f1 = f1_score(test_labels, test_predictions, average='weighted')
+    cm = confusion_matrix(test_labels, test_predictions)
 
-    encode_datapoints(all_possible_classes, "data/all_possible_classes_mpnet.npy",
-                      model)
-    # 699 train, 708 in test set, 805 in both train+test, so about 100 which are in
-    # one and not in the other, many are only once
+    # Print evaluation results
+    print(f'Accuracy: {acc:.4f}, Precision: {precision:.4f}, '
+          f'Recall: {recall:.4f}, F1 Score: {f1:.4f}')
+    print('Confusion Matrix:\n', cm)
 
-    print(min(body_lenghts), max(body_lenghts), mean(body_lenghts),
-          median(body_lenghts))
-    print(min(title_lenghts), max(title_lenghts), mean(title_lenghts),
-          median(title_lenghts))
 
-    plot_histogram(body_lenghts, "Body lengths")
-    plot_histogram(title_lenghts, "Title Lengths")
+def svm_classifier(X_train: np.ndarray, y_train: np.ndarray,
+                   X_test: np.ndarray, y_test: np.ndarray) -> None:
+    """
+    Trains and evaluates a Support Vector Machine (SVM) classifier.
 
+    Args:
+        X_train (np.ndarray): Training features.
+        y_train (np.ndarray): Training labels.
+        X_test (np.ndarray): Testing features.
+        y_test (np.ndarray): Testing labels.
+    """
+    svm_model = SVC()
+    svm_model.fit(X_train, y_train)
+    y_pred = svm_model.predict(X_test)
+
+    # Calculate evaluation metrics
+    acc = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted')
+    recall = recall_score(y_test, y_pred, average='weighted')
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    cm = confusion_matrix(y_test, y_pred)
+
+    # Print evaluation results
+    print(f'SVM Accuracy: {acc:.4f}, Precision: {precision:.4f}, '
+          f'Recall: {recall:.4f}, F1 Score: {f1:.4f}')
+    print('Confusion Matrix:\n', cm)
+
+
+def get_unique_labels(train_labels: np.ndarray) -> List[str]:
+    """
+    Returns unique labels from the training labels.
+
+    Args:
+        train_labels (np.ndarray): The training labels.
+
+    Returns:
+        List[str]: A list of unique labels.
+    """
+    return list(set(train_labels))
+
+
+def create_and_save_label_encoder(train_labels: np.ndarray) -> None:
+    """
+    Creates a label encoder from the training labels and saves it to a file.
+
+    Args:
+        train_labels (np.ndarray): The training labels.
+    """
+    le = LabelEncoder()
+    le.fit(train_labels)
+    joblib.dump(le, 'models/label_encoder.pkl')
+
+
+def load_label_encoder() -> LabelEncoder:
+    """
+    Loads the label encoder from file.
+
+    Returns:
+        LabelEncoder: The label encoder instance.
+    """
+    return joblib.load('models/label_encoder.pkl')
+
+
+def save_predictions_to_json(predictions: List[str], output_file: str) -> None:
+    """
+    Saves the model predictions to a JSON file.
+
+    Args:
+        predictions (List[str]): The model predictions.
+        output_file (str): The output file path.
+    """
+    with open(output_file, 'w') as f:
+        json.dump(predictions, f)
+        print(f"Predictions saved to {output_file}")
+
+
+def main() -> None:
+    """
+    Main function to execute the workflow of data processing, model training, 
+    evaluation, and predictions.
+    """
+    # Load and process data
+    train_df, test_df = load_data()
+    onet_vocab = load_vocab()
+  
+    # Call functions for creating embeddings
     create_embeddings(train_df, test_df, onet_vocab)
+    train_embeddings = np.load('data/X_train.npy')
+    train_labels = np.load('data/y_train.npy')
+    test_embeddings = np.load('data/X_test.npy')
+    test_labels = np.load('data/y_test.npy')
 
-    endings = ["_BODY", "_BODY_mpnet", "_BODY_oov", "_TITLE_RAW", "_TITLE_RAW_mpnet",
-               "_TITLE_RAW_oov"]
-    model_option = "NN"
-    vector_db_api = VectorDBAPI()
-    for ending in endings:
-        X_train = np.load(f"data/X_train{ending}.npy")
-        X_test = np.load(f"data/X_test{ending}.npy")
-        y_train = train_df["ONET"].to_list()
-        y_test = test_df["ONET"].to_list()
-        label_encoder = LabelEncoder()
-        common_labels = list(set(y_train).intersection(set(y_test)))
-        label_encoder.fit(common_labels)
-        X_train = [x for (x, label) in zip(X_train, y_train) if label in
-                   common_labels]
-        X_test = [x for (x, label) in zip(X_test, y_test) if label in
-                   common_labels]
-        original_y_test = deepcopy(y_test)
-        y_train = [y for y in y_train if y in common_labels]
-        y_test = [y for y in y_test if y in common_labels]
-        y_train = label_encoder.transform(y_train)
-        y_test = label_encoder.transform(y_test)
-        X_train = np.array(X_train)
-        X_test = np.array(X_test)
-        X_train = np.squeeze(X_train, axis=1)
-        X_test = np.squeeze(X_test, axis=1)
+    # Train neural network
+    train_nn(train_embeddings, train_labels, test_embeddings, test_labels)
 
-        filename = 'checkpoints/label_encoder.joblib'
-        joblib.dump(label_encoder, filename)
+    # Evaluate model
+    evaluate_model(test_embeddings, test_labels)
 
-        if model_option == "XGB":
-            # model = LogisticRegression(class_weight="balanced")
-            # model = XGBClassifier()
-            model = SVC(class_weight="balanced")
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            print("#" * 150)
-            print("Files extension:", ending)
-            print("Accuracy:", accuracy_score(y_test, y_pred))
-            print("Precision:", precision_score(y_test, y_pred, average="weighted"))
-            print("Recall:", recall_score(y_test, y_pred, average="weighted"))
-            print("F1:", f1_score(y_test, y_pred, average="weighted"))
-            joblib.dump(model, 'checkpoints/xgb_classifier.joblib')
-        elif model_option == "NN":
-            train_nn(X_train, y_train, X_test, y_test)
-        elif model_option == "SIMILARITY":
-            correct = 0
-            i = 0
-            for (emb, label) in tqdm(zip(X_test, original_y_test)):
-                i += 1
-                result = query_database(vector_db_api, emb.tolist())
-                correct += int(onet_name_to_label[result[0]["label"]] == label)
-                if i % 100 == 0:
-                    print(correct, correct / i)
-            print("Accuracy: ", correct / len(X_test))
-        else:
-            raise ValueError(f"Wrong model_option: {model_option}!")
+    # Save predictions
+    save_predictions_to_json(test_predictions, 'predictions.json')
 
 
 if __name__ == "__main__":
